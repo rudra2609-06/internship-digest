@@ -1,4 +1,4 @@
-import Anthropic from "@anthropic-ai/sdk";
+import { GoogleGenerativeAI } from "@google/generative-ai";
 import nodemailer from "nodemailer";
 
 // ─── Config ───────────────────────────────────────────────────────────────────
@@ -10,16 +10,16 @@ const PROFILE = {
   project: "Built a Next.js feedback app",
 };
 
-const SEARCH_QUERIES = [
-  "Node.js internship Surat Gujarat 2025",
-  "React frontend internship Surat Gujarat offline",
-  "web developer internship Surat Gujarat fresher",
-  "frontend developer intern Ahmedabad Gujarat 2025",
-];
+// ─── Search for internships via Gemini + Google Search grounding ──────────────
+async function searchInternships() {
+  const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
-// ─── Search for internships via Claude + web search ───────────────────────────
-async function searchInternships(client) {
-  const prompt = `You are an internship finder assistant. Search the web using multiple queries and find REAL, currently open internship listings.
+  const model = genAI.getGenerativeModel({
+    model: "gemini-1.5-flash",
+    tools: [{ googleSearch: {} }],
+  });
+
+  const prompt = `Search the web and find REAL, currently open internship listings for this student:
 
 Student profile:
 - Skills: ${PROFILE.skills.join(", ")}
@@ -27,38 +27,32 @@ Student profile:
 - Level: ${PROFILE.year}
 - Project: ${PROFILE.project}
 
-Search for internships using these queries one by one:
-${SEARCH_QUERIES.map((q, i) => `${i + 1}. "${q}"`).join("\n")}
+Search for:
+1. "web development internship Surat Gujarat 2025"
+2. "React frontend internship Gujarat offline fresher"
+3. "Node.js internship Surat Ahmedabad 2025"
+4. "frontend developer intern Gujarat stipend"
 
-For each real listing found, extract:
-- Role/title
-- Company name
-- Location
-- Stipend (if mentioned)
-- Apply link or source URL
-- Brief 1-line description
+Return ONLY a JSON array of the best 4-6 listings found. Each object must have:
+- title: job title
+- company: company name
+- location: city
+- stipend: monthly stipend or null
+- applyLink: URL to apply or null
+- description: 1 sentence about the role
+- source: where you found it (e.g. Internshala, LinkedIn)
 
-Return a JSON array of objects with fields: title, company, location, stipend, applyLink, description, source.
-Return ONLY the JSON array. No markdown, no explanation. If fewer than 3 listings found, still return what you found.`;
+Return ONLY the raw JSON array. No markdown, no explanation, no backticks.`;
 
-  const response = await client.messages.create({
-    model: "claude-opus-4-5",
-    max_tokens: 2000,
-    tools: [{ type: "web_search_20250305", name: "web_search" }],
-    messages: [{ role: "user", content: prompt }],
-  });
-
-  const text = response.content
-    .filter((b) => b.type === "text")
-    .map((b) => b.text)
-    .join("");
+  const result = await model.generateContent(prompt);
+  const text = result.response.text();
 
   const clean = text.replace(/```json|```/g, "").trim();
   const start = clean.indexOf("[");
   const end = clean.lastIndexOf("]");
 
   if (start === -1 || end === -1) {
-    console.error("No JSON array found in response:", text);
+    console.error("No JSON found in response:", text);
     return [];
   }
 
@@ -86,11 +80,7 @@ function buildEmailHTML(listings) {
         ${l.source ? `<span style="font-size:12px;background:#E6F1FB;color:#185FA5;padding:3px 9px;border-radius:6px;">${l.source}</span>` : ""}
       </div>
       ${l.description ? `<div style="font-size:13px;color:#374151;margin-top:10px;line-height:1.6;">${l.description}</div>` : ""}
-      ${
-        l.applyLink
-          ? `<a href="${l.applyLink}" style="display:inline-block;margin-top:12px;font-size:13px;color:#185FA5;text-decoration:none;border-bottom:1px solid #85B7EB;">View & Apply →</a>`
-          : ""
-      }
+      ${l.applyLink ? `<a href="${l.applyLink}" style="display:inline-block;margin-top:12px;font-size:13px;color:#185FA5;text-decoration:none;border-bottom:1px solid #85B7EB;">View & Apply →</a>` : ""}
     </div>
   `
     )
@@ -119,7 +109,7 @@ function buildEmailHTML(listings) {
     ${cards}
 
     <div style="text-align:center;font-size:12px;color:#9ca3af;margin-top:24px;padding-bottom:24px;">
-      Automated by Claude · Runs daily via GitHub Actions
+      Automated by Gemini · Runs daily via GitHub Actions
     </div>
   </div>
 </body>
@@ -153,11 +143,9 @@ async function sendEmail(html, listingCount) {
 
 // ─── Main ─────────────────────────────────────────────────────────────────────
 async function main() {
-  console.log("Starting internship search...");
+  console.log("Starting internship search with Gemini...");
 
-  const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
-
-  const listings = await searchInternships(client);
+  const listings = await searchInternships();
   console.log(`Found ${listings.length} listings.`);
 
   if (listings.length === 0) {
