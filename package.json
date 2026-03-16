@@ -1,15 +1,31 @@
-{
-  "name": "internship-digest",
-  "version": "1.0.0",
-  "description": "Daily internship digest email powered by Claude",
-  "type": "module",
-  "main": "src/index.js",
-  "scripts": {
-    "start": "node index.js",
-    "test": "node src/index.js"
-  },
-  "dependencies": {
-    "@anthropic-ai/sdk": "^0.39.0",
-    "nodemailer": "^6.9.0"
-  }
-}
+name: Daily Internship Digest
+
+on:
+  schedule:
+    # Runs every day at 8:00 AM IST (2:30 AM UTC)
+    - cron: "30 2 * * *"
+  workflow_dispatch:
+
+jobs:
+  send-digest:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Run internship search & send email
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GMAIL_USER: ${{ secrets.GMAIL_USER }}
+          GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+          RECIPIENT_EMAIL: ${{ secrets.RECIPIENT_EMAIL }}
+        run: npm start
